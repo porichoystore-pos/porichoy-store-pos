@@ -1,49 +1,45 @@
 import axios from 'axios';
 
-// Get the current hostname (for mobile access)
+// Get the base URL for API calls
 const getBaseUrl = () => {
-  // Check if we're running in a browser
+  // In production (Vercel), use environment variable
+  if (import.meta.env.PROD) {
+    return import.meta.env.VITE_API_URL || 'https://porichoy-store-pos.onrender.com/api';
+  }
+  
+  // In development, handle local and network access
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     const protocol = window.location.protocol;
-    const port = '5000'; // Backend port
+    const port = '5000';
     
-    console.log('📍 Current hostname:', hostname);
-    
-    // If accessing via localhost
+    // Local development
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return `${protocol}//localhost:${port}/api`;
     }
     
-    // If accessing via any network IP (192.168.x.x, 172.x.x.x, 10.x.x.x)
+    // Network IP (mobile testing)
     if (hostname.match(/^(192\.168\.|172\.|10\.)/)) {
-      return `${protocol}//${hostname}:${port}/api`;
-    }
-    
-    // For any other IP, try to connect to same IP
-    if (hostname.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
       return `${protocol}//${hostname}:${port}/api`;
     }
   }
   
-  // Default fallback
-  return import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  // Fallback
+  return 'http://localhost:5000/api';
 };
 
-// Log the base URL for debugging
 const BASE_URL = getBaseUrl();
 console.log('🌐 API Base URL:', BASE_URL);
-console.log('📱 You are accessing from:', window.location.href);
 
 const api = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30 seconds timeout
+  timeout: 30000,
 });
 
-// Request interceptor to add token
+// Request interceptor
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -51,31 +47,29 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    // Log full URL for debugging
-    console.log(`🚀 API Request: ${config.method.toUpperCase()} ${config.baseURL}${config.url}`);
+    if (import.meta.env.DEV) {
+      console.log(`🚀 API Request: ${config.method.toUpperCase()} ${config.baseURL}${config.url}`);
+    }
     
     return config;
   },
-  (error) => {
-    console.error('Request error:', error);
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor to handle errors
+// Response interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log(`✅ API Response: ${response.status} ${response.config.url}`);
+    if (import.meta.env.DEV) {
+      console.log(`✅ API Response: ${response.status} ${response.config.url}`);
+    }
     return response;
   },
   (error) => {
     if (error.response) {
-      // The request was made and the server responded with a status code
-      console.error('❌ API Error Response:', {
+      console.error('❌ API Error:', {
         status: error.response.status,
         data: error.response.data,
-        url: error.config?.url,
-        baseURL: error.config?.baseURL
+        url: error.config?.url
       });
       
       if (error.response?.status === 401) {
@@ -83,22 +77,8 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     } else if (error.request) {
-      // The request was made but no response was received
-      console.error('❌ API No Response - Server might be down:', {
-        url: error.config?.url,
-        baseURL: error.config?.baseURL,
-        message: error.message
-      });
-      
-      // More helpful error message
-      error.message = 'Cannot connect to server. Please check:\n' +
-        `1. Backend server is running on port 5000\n` +
-        `2. Your computer's IP is reachable from phone\n` +
-        `3. Try accessing: http://172.21.70.157:5000/api/test from phone browser\n` +
-        `4. Windows Firewall might be blocking the connection`;
-    } else {
-      // Something happened in setting up the request
-      console.error('❌ API Request Setup Error:', error.message);
+      console.error('❌ No response from server');
+      error.message = 'Cannot connect to server. Please try again.';
     }
     
     return Promise.reject(error);
