@@ -3,48 +3,38 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
-const os = require('os');
 
 dotenv.config();
 
 const app = express();
 
-// Get local network IP address
-const getNetworkIp = () => {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      // Skip internal and non-IPv4 addresses
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return 'localhost';
-};
+// CORS Configuration - Allow Vercel frontend
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://porichoy-store.vercel.app', // Your frontend on Vercel
+  'https://porichoy-store-git-main-yourusername.vercel.app' // Preview deployments
+];
 
-const NETWORK_IP = getNetworkIp();
-
-// CORS Configuration - Allow ALL local network IPs
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps, curl, etc)
+      // Allow requests with no origin (like mobile apps, curl)
       if (!origin) return callback(null, true);
       
-      // Allow localhost
+      // Allow all localhost in development
       if (origin.includes('localhost')) return callback(null, true);
       
-      // Allow any local network IP (192.168.x.x, 172.x.x.x, 10.x.x.x)
-      if (origin.match(/^http:\/\/(192\.168\.|172\.|10\.)/)) {
-        return callback(null, true);
+      // Allow any Vercel app
+      if (origin.includes('vercel.app')) return callback(null, true);
+      
+      // Check against allowed origins
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.log('🚫 Blocked origin:', origin);
+        callback(new Error('Not allowed by CORS'));
       }
-      
-      // Allow the specific network IP
-      if (origin.includes(NETWORK_IP)) return callback(null, true);
-      
-      console.log('Blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
   })
@@ -109,28 +99,36 @@ app.use("/api/categories", require("./routes/categories"));
 app.use("/api/customers", require("./routes/customers"));
 app.use("/api/reports", require("./routes/reports"));
 
-// Add a test route to verify CORS is working
+// Health check route for Render
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "OK", message: "Server is running" });
+});
+
+// Test route
 app.get("/api/test", (req, res) => {
   res.json({ 
-    message: "CORS is working!",
-    yourIP: req.ip,
-    headers: req.headers
+    message: "Backend is working!",
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
   });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ message: "Something went wrong!", error: err.message });
+  res.status(500).json({ 
+    message: "Something went wrong!", 
+    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message 
+  });
 });
 
-// Start server - Listen on all network interfaces
+// Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
   console.log("\n🚀 ==================================");
   console.log(`   🖥️  Server is running!`);
   console.log("   ==================================");
-  console.log(`   📱 Local: http://localhost:${PORT}`);
-  console.log(`   📱 Network: http://${NETWORK_IP}:${PORT}`);
+  console.log(`   📱 Port: ${PORT}`);
+  console.log(`   📱 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log("   ==================================\n");
 });
