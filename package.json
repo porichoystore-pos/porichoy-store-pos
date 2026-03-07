@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@zxing/library": "^0.21.3",
+    "axios": "^1.13.5",
+    "react-barcode-reader": "^0.0.2",
+    "react-router-dom": "^7.13.0"
+  }
+}
