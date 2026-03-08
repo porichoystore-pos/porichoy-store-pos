@@ -31,6 +31,24 @@ const getBaseUrl = () => {
 const BASE_URL = getBaseUrl();
 console.log('🌐 API Base URL:', BASE_URL);
 
+// Helper function to get full image URL
+export const getImageUrl = (imagePath) => {
+  if (!imagePath) return null;
+  
+  // If it's already a full URL, return as is
+  if (imagePath.startsWith('http')) {
+    return imagePath;
+  }
+  
+  // In production, use the Render backend URL
+  if (import.meta.env.PROD) {
+    return `https://porichoy-store-pos.onrender.com${imagePath}`;
+  }
+  
+  // In development, use localhost
+  return `http://localhost:5000${imagePath}`;
+};
+
 const api = axios.create({
   baseURL: BASE_URL,
   headers: {

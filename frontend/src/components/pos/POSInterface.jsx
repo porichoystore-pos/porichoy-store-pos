@@ -222,13 +222,22 @@ const POSInterface = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [cart]);
 
-  // Fix image URL
+  // Fixed image URL function for production
   const getImageUrl = (imagePath) => {
     if (!imagePath) return null;
-    const baseUrl = window.location.hostname === 'localhost' 
-      ? 'http://localhost:5000' 
-      : `http://${window.location.hostname}:5000`;
-    return `${baseUrl}${imagePath}`;
+    
+    // If it's already a full URL, return as is
+    if (imagePath.startsWith('http')) {
+      return imagePath;
+    }
+    
+    // In production, use the Render backend URL
+    if (import.meta.env.PROD) {
+      return `https://porichoy-store-pos.onrender.com${imagePath}`;
+    }
+    
+    // In development, use localhost
+    return `http://localhost:5000${imagePath}`;
   };
 
   return (

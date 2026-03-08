@@ -1,20 +1,13 @@
 import React from 'react';
-import { Link } from 'react-router-dom'; // 👈 Add this import
+import { Link } from 'react-router-dom';
 import { FiEdit2, FiTrash2, FiPackage, FiEye } from 'react-icons/fi';
 import { formatCurrency } from '../../utils/formatters';
+import { getImageUrl } from '../../services/api'; // Import the helper
 
 const ProductCard = ({ product, onDelete, onView }) => {
   const discount = ((product.mrp - product.price) / product.mrp * 100).toFixed(0);
   
-  // Fix image URL
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    const baseUrl = window.location.hostname === 'localhost' 
-      ? 'http://localhost:5000' 
-      : `http://${window.location.hostname}:5000`;
-    return `${baseUrl}${imagePath}`;
-  };
-
+  // Use the centralized helper for image URL
   const imageUrl = product.image ? getImageUrl(product.image) : null;
 
   return (
