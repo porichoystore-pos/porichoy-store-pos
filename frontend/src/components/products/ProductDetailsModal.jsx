@@ -1,27 +1,20 @@
 import React from 'react';
 import { FiX, FiPackage } from 'react-icons/fi';
 import { formatCurrency } from '../../utils/formatters';
+import { getImageUrl } from '../../services/api';
 
 const ProductDetailsModal = ({ product, onClose }) => {
   if (!product) return null;
 
-  // Fix image URL
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    const baseUrl = window.location.hostname === 'localhost' 
-      ? 'http://localhost:5000' 
-      : `http://${window.location.hostname}:5000`;
-    return `${baseUrl}${imagePath}`;
-  };
-
+  // Use the centralized Cloudinary-compatible helper
   const imageUrl = product.image ? getImageUrl(product.image) : null;
-  const discount = ((product.mrp - product.price) / product.mrp * 100).toFixed(0);
+  const discount = product.mrp > 0 ? ((product.mrp - product.price) / product.mrp * 100).toFixed(0) : 0;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl max-w-sm w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl max-w-sm sm:max-w-md w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-100 p-4 flex justify-between items-center">
+        <div className="sticky top-0 bg-white border-b border-gray-100 p-4 flex justify-between items-center z-10">
           <h2 className="text-lg font-semibold text-gray-900">Product Details</h2>
           <button
             onClick={onClose}
@@ -35,7 +28,7 @@ const ProductDetailsModal = ({ product, onClose }) => {
         <div className="p-4">
           {/* Product Image */}
           <div className="bg-gray-50 rounded-lg p-4 mb-4">
-            <div className="aspect-square max-w-[200px] mx-auto">
+            <div className="aspect-square max-w-[220px] mx-auto bg-white rounded-lg overflow-hidden">
               {imageUrl ? (
                 <img 
                   src={imageUrl} 
@@ -44,7 +37,9 @@ const ProductDetailsModal = ({ product, onClose }) => {
                   onError={(e) => {
                     e.target.onerror = null;
                     e.target.style.display = 'none';
-                    e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center"><FiPackage class="w-16 h-16 text-gray-300" /></div>';
+                    if (e.target.parentElement) {
+                      e.target.parentElement.innerHTML = '<div class="w-full h-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>';
+                    }
                   }}
                 />
               ) : (
@@ -86,7 +81,9 @@ const ProductDetailsModal = ({ product, onClose }) => {
             {discount > 0 && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600">You Save</span>
-                <span className="text-sm font-medium text-green-600">{discount}% ({formatCurrency(product.mrp - product.price)})</span>
+                <span className="text-sm font-medium text-green-600">
+                  {discount}% ({formatCurrency(product.mrp - product.price)})
+                </span>
               </div>
             )}
           </div>

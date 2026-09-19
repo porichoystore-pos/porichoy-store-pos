@@ -10,7 +10,7 @@ import {
   FiX
 } from 'react-icons/fi';
 import { useToast } from '../../context/ToastContext';
-import api from '../../services/api';
+import api, { getImageUrl } from '../../services/api';
 import ProductCard from './ProductCard';
 import ProductDetailsModal from './ProductDetailsModal';
 import ConfirmDialog from '../common/ConfirmDialog';
@@ -82,6 +82,7 @@ const ProductList = () => {
     try {
       await api.delete(`/products/${deleteDialog.productId}`);
       setProducts(products.filter(p => p._id !== deleteDialog.productId));
+      setFilteredProducts(filteredProducts.filter(p => p._id !== deleteDialog.productId));
       toast.success('Product deleted successfully');
     } catch (error) {
       toast.error('Failed to delete product');
@@ -120,15 +121,6 @@ const ProductList = () => {
     setShowDetailsModal(true);
   };
 
-  // Fix image URL
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    const baseUrl = window.location.hostname === 'localhost' 
-      ? 'http://localhost:5000' 
-      : `http://${window.location.hostname}:5000`;
-    return `${baseUrl}${imagePath}`;
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -148,14 +140,14 @@ const ProductList = () => {
         <div className="flex gap-2">
           <button
             onClick={() => setImportDialog(true)}
-            className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm flex items-center"
+            className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm flex items-center hover:bg-green-700"
           >
             <FiUpload className="mr-1" />
             <span>Import</span>
           </button>
           <Link
             to="/products/new"
-            className="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm flex items-center"
+            className="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm flex items-center hover:bg-primary-700"
           >
             <FiPlus className="mr-1" />
             <span>Add</span>
@@ -173,7 +165,6 @@ const ProductList = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search products by name, category, brand..."
             className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            autoFocus
           />
           {searchQuery && (
             <button
@@ -203,15 +194,15 @@ const ProductList = () => {
                     <img 
                       src={getImageUrl(product.image)} 
                       alt={product.name} 
-                      className="w-8 h-8 object-cover rounded"
+                      className="w-10 h-10 object-cover rounded"
                       onError={(e) => {
                         e.target.onerror = null;
-                        e.target.style.display = 'none';
+                        e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="%239ca3af" stroke-width="2"%3E%3Cpath d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/%3E%3C/svg%3E';
                       }}
                     />
                   ) : (
-                    <div className="w-8 h-8 bg-gray-100 rounded flex items-center justify-center">
-                      <FiPackage className="w-4 h-4 text-gray-400" />
+                    <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center">
+                      <FiPackage className="w-5 h-5 text-gray-400" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
@@ -227,9 +218,9 @@ const ProductList = () => {
         )}
       </div>
 
-      {/* Products Grid */}
+      {/* Products Grid - Responsive: 2 cols mobile, 3 cols tablet, 4-5 cols desktop */}
       {filteredProducts.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
           {filteredProducts.map((product) => (
             <ProductCard
               key={product._id}
@@ -246,7 +237,7 @@ const ProductList = () => {
           <p className="text-xs text-gray-400 mt-1">Try a different search or add a new product</p>
           <Link
             to="/products/new"
-            className="inline-block mt-3 px-4 py-2 text-sm bg-primary-600 text-white rounded-lg"
+            className="inline-block mt-3 px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700"
           >
             Add Product
           </Link>
@@ -292,7 +283,7 @@ const ProductList = () => {
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setImportDialog(false)}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg"
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>

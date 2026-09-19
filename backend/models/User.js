@@ -38,17 +38,16 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Hash password before save
-userSchema.pre("save", async function (next) {
+// Hash password before save - FIXED VERSION (no next() in async function)
+userSchema.pre("save", async function () {
   // Only hash the password if it's modified (or new)
-  if (!this.isModified("password")) return next();
+  if (!this.isModified("password")) return;
   
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    next();
   } catch (error) {
-    next(error);
+    throw error;
   }
 });
 
@@ -57,10 +56,9 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// Update last login - FIXED VERSION
+// Update last login - Using updateOne to avoid triggering pre-save hooks
 userSchema.methods.updateLastLogin = async function() {
   this.lastLogin = new Date();
-  // Use updateOne instead of save to avoid triggering pre-save hooks
   await this.constructor.updateOne(
     { _id: this._id },
     { $set: { lastLogin: new Date() } }

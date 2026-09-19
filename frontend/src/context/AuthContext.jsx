@@ -54,6 +54,24 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Add register function
+  const register = async (userData) => {
+    try {
+      const response = await api.post('/auth/register', userData);
+      const { token, ...user } = response.data;
+      
+      localStorage.setItem('token', token);
+      setToken(token);
+      setUser(user);
+      
+      toast.success('Account created successfully!');
+      return true;
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Registration failed');
+      return false;
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     setToken(null);
@@ -64,6 +82,7 @@ export const AuthProvider = ({ children }) => {
   const value = {
     user,
     login,
+    register,
     logout,
     loading,
     isAuthenticated: !!user

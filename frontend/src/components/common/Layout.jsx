@@ -11,13 +11,8 @@ const Layout = () => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      // On mobile, default to icons only (sidebar closed)
-      if (mobile) {
-        setSidebarOpen(false);
-      } else {
-        // On desktop, default to full sidebar
-        setSidebarOpen(true);
-      }
+      // Desktop default open, mobile default closed
+      setSidebarOpen(!mobile);
     };
 
     handleResize();
@@ -28,11 +23,17 @@ const Layout = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+
       <div className="flex">
         <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-        <main 
-          className={`flex-1 p-4 sm:p-6 transition-all duration-300 mt-16 ${
-            sidebarOpen ? 'md:ml-64 ml-20' : 'ml-20'
+
+        <main
+          className={`flex-1 transition-all duration-300 mt-16 ${
+            isMobile
+              ? 'p-3 pb-24 ml-0'           // 📱 Mobile: full width + bottom padding for nav bar
+              : sidebarOpen
+                ? 'ml-64 p-6'              // 🖥️ Desktop: sidebar open
+                : 'ml-20 p-6'              // 🖥️ Desktop: sidebar collapsed
           }`}
         >
           <Outlet />

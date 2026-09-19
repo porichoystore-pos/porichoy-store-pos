@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "server.js",
   "engines": {
-    "node": "18.x"
+    "node": ">=18.0.0"
   },
   "scripts": {
     "start": "node server.js",
@@ -15,6 +15,7 @@
   "description": "",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^1.41.3",
     "cors": "^2.8.6",
     "csv-writer": "^1.6.0",
     "dotenv": "^17.3.1",
@@ -24,6 +25,7 @@
     "mongodb": "^7.1.0",
     "mongoose": "^9.2.3",
     "multer": "^2.1.0",
+    "multer-storage-cloudinary": "^4.0.0",
     "pdfkit": "^0.17.2"
   },
   "devDependencies": {

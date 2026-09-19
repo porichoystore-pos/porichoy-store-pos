@@ -1,6 +1,7 @@
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 const { exportToCSV, exportToExcel } = require('../utils/exportHelper');
+const { cloudinary } = require('../config/cloudinary');
 
 // @desc    Get all products
 // @route   GET /api/products
@@ -212,12 +213,16 @@ exports.getLowStockProducts = async (req, res) => {
 // @access  Private
 exports.addProduct = async (req, res) => {
   try {
+    console.log('📥 Add product request received');
+    console.log('📦 Request body:', req.body);
+    console.log('📸 Request file:', req.file ? 'File present' : 'No file');
+
     // Handle both JSON and FormData
     let productData;
     
     // Check if there's a file in the request
     if (req.file) {
-      // If image was uploaded via multer
+      // Cloudinary returns the full URL in req.file.path
       productData = {
         name: req.body.name,
         category: req.body.category,
@@ -227,9 +232,9 @@ exports.addProduct = async (req, res) => {
         barcode: req.body.barcode && req.body.barcode.trim() !== '' ? req.body.barcode.trim() : undefined,
         description: req.body.description || '',
         tax: parseFloat(req.body.tax) || 0,
-        image: `/uploads/${req.file.filename}`
+        image: req.file.path // ✅ Cloudinary URL
       };
-      console.log('📸 Product with image:', req.file.filename);
+      console.log('📸 Product with Cloudinary image:', req.file.path);
     } else {
       // If no image, use req.body directly
       productData = {
@@ -298,7 +303,18 @@ exports.updateProduct = async (req, res) => {
     let updateData;
     
     if (req.file) {
-      // If new image was uploaded
+      // If new image was uploaded to Cloudinary
+      // Delete old image from Cloudinary if it exists
+      if (product.image && product.image.includes('cloudinary')) {
+        try {
+          const publicId = product.image.split('/').slice(-2).join('/').split('.')[0];
+          await cloudinary.uploader.destroy(publicId);
+          console.log('✅ Old image deleted from Cloudinary:', publicId);
+        } catch (cloudinaryError) {
+          console.error('⚠️ Failed to delete old image from Cloudinary:', cloudinaryError.message);
+        }
+      }
+
       updateData = {
         name: req.body.name,
         category: req.body.category,
@@ -310,8 +326,9 @@ exports.updateProduct = async (req, res) => {
         lowStockAlert: parseInt(req.body.lowStockAlert) || 5,
         description: req.body.description || '',
         tax: parseFloat(req.body.tax) || 0,
-        image: `/uploads/${req.file.filename}`
+        image: req.file.path // ✅ Cloudinary URL
       };
+      console.log('📸 Updated with Cloudinary image:', req.file.path);
     } else {
       // If no new image, use req.body
       updateData = {
@@ -381,6 +398,18 @@ exports.deleteProduct = async (req, res) => {
     
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
+    }
+
+    // If product has a Cloudinary image, delete it from Cloudinary
+    if (product.image && product.image.includes('cloudinary')) {
+      try {
+        const publicId = product.image.split('/').slice(-2).join('/').split('.')[0];
+        await cloudinary.uploader.destroy(publicId);
+        console.log('✅ Deleted image from Cloudinary:', publicId);
+      } catch (cloudinaryError) {
+        console.error('⚠️ Failed to delete from Cloudinary:', cloudinaryError.message);
+        // Don't fail the whole request if image deletion fails
+      }
     }
 
     // Soft delete
@@ -526,8 +555,18 @@ exports.updateProductImage = async (req, res) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    // Save image path
-    product.image = `/uploads/${req.file.filename}`;
+    // Delete old image from Cloudinary if it exists
+    if (product.image && product.image.includes('cloudinary')) {
+      try {
+        const publicId = product.image.split('/').slice(-2).join('/').split('.')[0];
+        await cloudinary.uploader.destroy(publicId);
+      } catch (cloudinaryError) {
+        console.error('⚠️ Failed to delete old image:', cloudinaryError.message);
+      }
+    }
+
+    // Save new Cloudinary URL
+    product.image = req.file.path;
     await product.save();
 
     res.json({ 

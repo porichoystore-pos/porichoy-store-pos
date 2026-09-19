@@ -4,6 +4,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
 const fs = require('fs');
+const os = require('os');
 
 dotenv.config();
 
@@ -16,76 +17,72 @@ if (!fs.existsSync(uploadsDir)) {
   console.log('✅ Created uploads directory');
 }
 
+// Get all local network IPs
+const getNetworkIps = () => {
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push(iface.address);
+      }
+    }
+  }
+  return ips;
+};
+
+const NETWORK_IPS = getNetworkIps();
+console.log('🌐 Network IPs detected:', NETWORK_IPS);
+
 // CORS Configuration
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://porichoy-store-pos.vercel.app',
-  'https://porichoy-store.vercel.app'
+  'https://porichoy-store.vercel.app',
+  ...NETWORK_IPS.map(ip => `http://${ip}:5173`)
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    if (origin.includes('localhost')) return callback(null, true);
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) return callback(null, true);
     if (origin.includes('vercel.app')) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('🚫 Blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
+    if (origin.match(/^http:\/\/(192\.168\.|172\.|10\.)/)) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
+    
+    console.log('🚫 Blocked origin:', origin);
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
+  optionsSuccessStatus: 200
 }));
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files with proper headers
+// Serve static files
 app.use('/uploads', (req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 }, express.static(uploadsDir));
 
-// Add a route to check if an image exists
-app.get('/api/image-check/:filename', (req, res) => {
-  const filePath = path.join(uploadsDir, req.params.filename);
-  if (fs.existsSync(filePath)) {
-    res.json({ exists: true, filename: req.params.filename });
-  } else {
-    res.json({ exists: false, filename: req.params.filename });
-  }
-});
-
 // Database Connection
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connected successfully");
-    initializeDatabase();
+    // Only initialize categories, NOT admin user
+    initializeCategories();
   })
   .catch((err) => console.log("❌ MongoDB connection error:", err));
 
-// Initialize Database with default data
-const initializeDatabase = async () => {
+// Initialize only default categories (NO admin user)
+const initializeCategories = async () => {
   try {
-    const User = require("./models/User");
     const Category = require("./models/Category");
     
-    const adminExists = await User.findOne({ username: "admin" });
-    if (!adminExists) {
-      await User.create({
-        username: "admin",
-        password: "adminissuhel06",
-        role: "admin"
-      });
-      console.log("✅ Admin user created (admin/adminissuhel06)");
-    } else {
-      console.log("✅ Admin user already exists");
-    }
-
     const categoryCount = await Category.countDocuments();
     if (categoryCount === 0) {
       const defaultCategories = [
@@ -97,6 +94,8 @@ const initializeDatabase = async () => {
       ];
       await Category.insertMany(defaultCategories);
       console.log("✅ Default categories created");
+    } else {
+      console.log("ℹ️ Categories already exist:", categoryCount);
     }
   } catch (error) {
     console.log("⚠️ Database initialization error:", error.message);
@@ -136,7 +135,7 @@ app.use((err, req, res, next) => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log("\n🚀 ==================================");
   console.log(`   🖥️  Server is running!`);
   console.log("   ==================================");
