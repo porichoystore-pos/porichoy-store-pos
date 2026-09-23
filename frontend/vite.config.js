@@ -26,8 +26,9 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
-          ui: ['react-icons', 'recharts'],
-          tensorflow: ['@tensorflow/tfjs', '@tensorflow-models/mobilenet']
+          icons: ['react-icons'],   // small, needed on every page
+          charts: ['recharts'],     // heavy — only loads with Dashboard/Reports (lazy routes)
+          tensorflow: ['@tensorflow/tfjs', '@tensorflow-models/mobilenet'] // only loads with VisualSearch
         }
       }
     }

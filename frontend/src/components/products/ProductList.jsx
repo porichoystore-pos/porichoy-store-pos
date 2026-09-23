@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { 
   FiPlus, 
   FiSearch, 
@@ -14,14 +14,19 @@ import api, { getImageUrl } from '../../services/api';
 import ProductCard from './ProductCard';
 import ProductDetailsModal from './ProductDetailsModal';
 import ConfirmDialog from '../common/ConfirmDialog';
+import PageHeader from '../common/PageHeader';
+import EmptyState from '../common/EmptyState';
+import { ProductGridSkeleton } from '../common/Skeletons';
 import { formatCurrency } from '../../utils/formatters';
 import { useDebounce } from '../../hooks/useDebounce';
 
 const ProductList = () => {
+  const location = useLocation();
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  // Seed from global search navigation
+  const [searchQuery, setSearchQuery] = useState(location.state?.search || '');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [deleteDialog, setDeleteDialog] = useState({ open: false, productId: null, productName: '' });
@@ -116,44 +121,36 @@ const ProductList = () => {
     }
   };
 
-  const handleViewProduct = (product) => {
+  // Stable callbacks so memoized <ProductCard> skips unnecessary re-renders
+  const handleViewProduct = useCallback((product) => {
     setSelectedProduct(product);
     setShowDetailsModal(true);
-  };
+  }, []);
+
+  const openDeleteDialog = useCallback((id, name) => {
+    setDeleteDialog({ open: true, productId: id, productName: name });
+  }, []);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto"></div>
-          <p className="mt-3 text-sm text-gray-600">Loading products...</p>
-        </div>
-      </div>
-    );
+    return <ProductGridSkeleton />;
   }
 
   return (
     <div className="px-3 py-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-gray-900">Products</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setImportDialog(true)}
-            className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm flex items-center hover:bg-green-700"
-          >
-            <FiUpload className="mr-1" />
-            <span>Import</span>
-          </button>
-          <Link
-            to="/products/new"
-            className="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm flex items-center hover:bg-primary-700"
-          >
-            <FiPlus className="mr-1" />
-            <span>Add</span>
-          </Link>
-        </div>
-      </div>
+      <PageHeader title="Products" subtitle={`${filteredProducts.length} items`}>
+        <button
+          onClick={() => setImportDialog(true)}
+          className="btn-secondary btn-sm"
+        >
+          <FiUpload />
+          <span className="hidden sm:inline">Import</span>
+        </button>
+        <Link to="/products/new" className="btn-primary btn-sm">
+          <FiPlus />
+          <span className="hidden sm:inline">Add</span>
+        </Link>
+      </PageHeader>
 
       {/* Search Bar */}
       <div className="relative mb-4">
@@ -226,22 +223,21 @@ const ProductList = () => {
               key={product._id}
               product={product}
               onView={handleViewProduct}
-              onDelete={(id, name) => setDeleteDialog({ open: true, productId: id, productName: name })}
+              onDelete={openDeleteDialog}
             />
           ))}
         </div>
       ) : (
-        <div className="text-center py-12 bg-white rounded-lg">
-          <FiPackage className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">No products found</p>
-          <p className="text-xs text-gray-400 mt-1">Try a different search or add a new product</p>
-          <Link
-            to="/products/new"
-            className="inline-block mt-3 px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-          >
-            Add Product
-          </Link>
-        </div>
+        <EmptyState
+          icon={FiPackage}
+          title="No products found"
+          description="Try a different search or add a new product to get started"
+          action={
+            <Link to="/products/new" className="btn-primary btn-sm">
+              <FiPlus /> Add Product
+            </Link>
+          }
+        />
       )}
 
       {/* Product Details Modal */}

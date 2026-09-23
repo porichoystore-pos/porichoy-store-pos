@@ -5,6 +5,12 @@ const {
   getProducts,
   getProduct,
   searchProducts,
+  getSuggestions,
+  getProductsByCategory,
+  getLowStockProducts,
+  getRelatedProducts,
+  getFrequentlyBought,
+  getTopSelling,
   visualSearch,
   addProduct,
   updateProduct,
@@ -20,6 +26,12 @@ router.use(protect);
 
 router.get('/', getProducts);
 router.get('/search', searchProducts);
+router.get('/suggestions', getSuggestions);
+router.get('/top-selling', getTopSelling);
+router.get('/frequently-bought', getFrequentlyBought);
+router.get('/low-stock', getLowStockProducts);
+router.get('/category/:categoryId', getProductsByCategory);
+router.get('/:id/related', getRelatedProducts);
 router.post('/visual-search', visualSearch);
 router.get('/export', exportProducts);
 router.post('/bulk-import', upload.single('file'), bulkImport);

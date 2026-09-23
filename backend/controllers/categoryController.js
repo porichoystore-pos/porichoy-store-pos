@@ -1,5 +1,6 @@
 const Category = require('../models/Category');
 const Product = require('../models/Product');
+const cache = require('../utils/cache');
 
 // @desc    Get all categories with hierarchy
 // @route   GET /api/categories
@@ -7,6 +8,12 @@ const Product = require('../models/Product');
 exports.getCategories = async (req, res) => {
   try {
     const { type, featured, parent } = req.query;
+
+    // Categories rarely change — cache each filter combination for 60s
+    const cacheKey = `categories:type=${type || ''}:featured=${featured || ''}:parent=${parent || ''}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return res.json(cached);
+
     const query = { isActive: true };
 
     if (type) query.type = type;
@@ -18,6 +25,7 @@ exports.getCategories = async (req, res) => {
       .populate('productCount')
       .sort({ displayOrder: 1, name: 1 });
 
+    cache.set(cacheKey, categories, 60 * 1000);
     res.json(categories);
   } catch (error) {
     console.error("Get categories error:", error);
@@ -150,6 +158,9 @@ exports.createCategory = async (req, res) => {
       tags: tags || []
     });
 
+    // Invalidate cached category lists
+    cache.del(/^categories:/);
+
     res.status(201).json(category);
   } catch (error) {
     console.error("Create category error:", error);
@@ -179,6 +190,9 @@ exports.updateCategory = async (req, res) => {
     Object.assign(category, req.body);
     await category.save();
 
+    // Invalidate cached category lists
+    cache.del(/^categories:/);
+
     res.json(category);
   } catch (error) {
     console.error("Update category error:", error);
@@ -197,21 +211,25 @@ exports.deleteCategory = async (req, res) => {
       return res.status(404).json({ message: "Category not found" });
     }
 
-    // Check if category has subcategories
-    const subcategories = await Category.countDocuments({ parentCategory: category._id });
+    // Check if category has ACTIVE subcategories
+    const subcategories = await Category.countDocuments({
+      parentCategory: category._id,
+      isActive: true
+    });
     if (subcategories > 0) {
       return res.status(400).json({ 
         message: "Cannot delete category with subcategories. Please delete subcategories first." 
       });
     }
 
-    // Check if category has products
+    // Check if category has ACTIVE products (soft-deleted products shouldn't block)
     const productCount = await Product.countDocuments({ 
       $or: [
         { category: category._id },
         { subcategory: category._id },
         { brand: category._id }
-      ] 
+      ],
+      isActive: true
     });
     
     if (productCount > 0) {
@@ -223,6 +241,9 @@ exports.deleteCategory = async (req, res) => {
     // Soft delete
     category.isActive = false;
     await category.save();
+
+    // Invalidate cached category lists
+    cache.del(/^categories:/);
 
     res.json({ message: "Category deleted successfully" });
   } catch (error) {

@@ -6,7 +6,8 @@ const {
   getTopProducts,
   getCategorySales,
   getDailySales,
-  getProfitReport
+  getProfitReport,
+  exportReport
 } = require('../controllers/reportController');
 
 const router = express.Router();
@@ -19,5 +20,6 @@ router.get('/top-products', getTopProducts);
 router.get('/category-sales', getCategorySales);
 router.get('/daily', getDailySales);
 router.get('/profit', getProfitReport);
+router.get('/export', exportReport);
 
 module.exports = router;

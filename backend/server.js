@@ -5,10 +5,44 @@ const dotenv = require("dotenv");
 const path = require("path");
 const fs = require('fs');
 const os = require('os');
+const compression = require("compression");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
 dotenv.config();
 
 const app = express();
+
+// Trust the first proxy hop (Render/Vercel) so rate limiting & IPs work correctly
+app.set('trust proxy', 1);
+
+// Security headers (cross-origin resource policy kept open for LAN/mobile image access)
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false
+}));
+
+// Gzip/deflate compression for all API responses
+app.use(compression());
+
+// Rate limiting — generous global cap, stricter cap on auth endpoints
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, please slow down and try again later." }
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts, please try again later." }
+});
+app.use("/api/", apiLimiter);
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -109,6 +143,12 @@ app.use("/api/bills", require("./routes/bills"));
 app.use("/api/categories", require("./routes/categories"));
 app.use("/api/customers", require("./routes/customers"));
 app.use("/api/reports", require("./routes/reports"));
+app.use("/api/sales", require("./routes/sales"));
+app.use("/api/search", require("./routes/search"));
+app.use("/api/settings", require("./routes/settings"));
+app.use("/api/users", require("./routes/users"));
+app.use("/api/backup", require("./routes/backup"));
+app.use("/api/daily-sales", require("./routes/dailySales"));
 
 // Health check
 app.get("/health", (req, res) => {

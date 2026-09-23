@@ -17,19 +17,23 @@ exports.getCustomers = async (req, res) => {
       ];
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    // Pagination guardrails: default 20, hard cap at 100
+    const pageLimit = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
+    const pageNumber = Math.max(parseInt(page) || 1, 1);
+    const skip = (pageNumber - 1) * pageLimit;
 
     const customers = await Customer.find(query)
       .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
-      .skip(skip);
+      .limit(pageLimit)
+      .skip(skip)
+      .lean();
 
     const total = await Customer.countDocuments(query);
 
     res.json({
       customers,
-      page: parseInt(page),
-      pages: Math.ceil(total / parseInt(limit)),
+      page: pageNumber,
+      pages: Math.ceil(total / pageLimit),
       total
     });
   } catch (error) {
@@ -52,7 +56,7 @@ exports.searchCustomers = async (req, res) => {
         { email: { $regex: q, $options: 'i' } }
       ],
       isActive: true
-    }).limit(10);
+    }).limit(10).lean();
 
     res.json(customers);
   } catch (error) {

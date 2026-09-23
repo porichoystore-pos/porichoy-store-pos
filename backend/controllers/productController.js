@@ -1,7 +1,9 @@
 const Product = require('../models/Product');
 const Category = require('../models/Category');
+const Bill = require('../models/Bill');
 const { exportToCSV, exportToExcel } = require('../utils/exportHelper');
 const { cloudinary } = require('../config/cloudinary');
+const cache = require('../utils/cache');
 
 // @desc    Get all products
 // @route   GET /api/products
@@ -10,6 +12,10 @@ exports.getProducts = async (req, res) => {
   try {
     const { category, stock, search, page = 1, limit = 50, sort = 'createdAt' } = req.query;
     const query = { isActive: true };
+
+    // Pagination guardrails: default 50, hard cap at 100 to prevent huge responses
+    const pageLimit = Math.min(Math.max(parseInt(limit) || 50, 1), 100);
+    const pageNumber = Math.max(parseInt(page) || 1, 1);
 
     // Filters
     if (category) query.category = category;
@@ -27,36 +33,42 @@ exports.getProducts = async (req, res) => {
       ];
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const skip = (pageNumber - 1) * pageLimit;
 
     // Determine sort order
     let sortOption = { createdAt: -1 };
     if (sort === 'name') sortOption = { name: 1 };
     if (sort === 'price') sortOption = { price: 1 };
     if (sort === 'stock') sortOption = { stock: 1 };
-    if (sort === 'popular') sortOption = { sales: -1 };
+    if (sort === 'popular') sortOption = { salesCount: -1 }; // fixed: 'sales' field didn't exist
 
     const products = await Product.find(query)
       .populate('category', 'name color')
       .populate('brand', 'name')
       .sort(sortOption)
-      .limit(parseInt(limit))
-      .skip(skip);
+      .limit(pageLimit)
+      .skip(skip)
+      .lean();
 
     const total = await Product.countDocuments(query);
 
-    // Get popular products (most sold)
-    const popularProducts = await Product.find({ isActive: true })
-      .populate('category', 'name')
-      .populate('brand', 'name')
-      .sort({ sales: -1 })
-      .limit(10);
+    // Get popular products (most sold) — cached for 5 minutes, rarely changes
+    let popularProducts = cache.get('popularProducts');
+    if (!popularProducts) {
+      popularProducts = await Product.find({ isActive: true })
+        .populate('category', 'name')
+        .populate('brand', 'name')
+        .sort({ salesCount: -1 })
+        .limit(10)
+        .lean();
+      cache.set('popularProducts', popularProducts, 5 * 60 * 1000);
+    }
 
     res.json({
       products,
       popularProducts,
-      page: parseInt(page),
-      pages: Math.ceil(total / parseInt(limit)),
+      page: pageNumber,
+      pages: Math.ceil(total / pageLimit),
       total
     });
   } catch (error) {
@@ -89,38 +101,94 @@ exports.getProduct = async (req, res) => {
 exports.searchProducts = async (req, res) => {
   try {
     const { q } = req.query;
-    
-    if (!q || q.length < 1) {
+
+    if (!q || q.trim().length < 1) {
       return res.json([]);
     }
+    const query = q.trim();
 
-    // Case-insensitive partial matching
-    const products = await Product.find({
-      name: { $regex: q, $options: 'i' },
-      isActive: true
-    })
-    .populate('category', 'name')
-    .populate('brand', 'name')
-    .limit(20)
-    .sort({ name: 1 });
-
-    // If no results by name, search by category or brand
-    if (products.length === 0) {
-      const categoryProducts = await Product.find({
-        $or: [
-          { category: { $in: await Category.find({ name: { $regex: q, $options: 'i' } }).distinct('_id') } },
-          { brand: { $in: await Category.find({ name: { $regex: q, $options: 'i' } }).distinct('_id') } }
-        ],
-        isActive: true
-      })
+    // ---- 1. Exact barcode match (scanner input) — fastest path ----
+    const exactBarcode = await Product.findOne({ barcode: query, isActive: true })
       .populate('category', 'name')
       .populate('brand', 'name')
-      .limit(10);
+      .lean();
 
-      return res.json(categoryProducts);
+    if (exactBarcode) {
+      return res.json([exactBarcode]);
     }
 
-    res.json(products);
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const terms = escaped.split(/\s+/).filter(Boolean);
+
+    // ---- 2. Standard matches: name / barcode / tags ----
+    const products = await Product.find({
+      $or: [
+        { name: { $regex: escaped, $options: 'i' } },
+        { barcode: { $regex: escaped, $options: 'i' } },
+        { tags: { $regex: escaped, $options: 'i' } }
+      ],
+      isActive: true
+    })
+      .populate('category', 'name')
+      .populate('brand', 'name')
+      .limit(30)
+      .lean();
+
+    // ---- 3. Fuzzy typo-tolerant fallback (char-subsequence regex) ----
+    if (products.length < 3 && query.length >= 3) {
+      // Char-subsequence pattern: "lpstck" matches "Lipstick"
+      const fuzzyPattern = escaped.split('').map((c) => (c === ' ' ? '.*' : `${c}.*`)).join('');
+      const fuzzyProducts = await Product.find({
+        name: { $regex: fuzzyPattern, $options: 'i' },
+        isActive: true,
+        _id: { $nin: products.map((p) => p._id) }
+      })
+        .populate('category', 'name')
+        .populate('brand', 'name')
+        .limit(10)
+        .lean();
+      products.push(...fuzzyProducts);
+    }
+
+    // ---- 4. Category/brand search fallback ----
+    if (products.length === 0) {
+      const catIds = await Category.find({ name: { $regex: escaped, $options: 'i' } }).distinct('_id');
+      if (catIds.length > 0) {
+        const categoryProducts = await Product.find({
+          $or: [{ category: { $in: catIds } }, { brand: { $in: catIds } }],
+          isActive: true
+        })
+          .populate('category', 'name')
+          .populate('brand', 'name')
+          .limit(10)
+          .lean();
+        return res.json(categoryProducts);
+      }
+    }
+
+    // ---- 5. Score by relevance ----
+    const qLower = query.toLowerCase();
+    const isSubsequence = (s, t) => {
+      let i = 0;
+      for (const ch of s) if (ch === t[i]) i++;
+      return i === t.length;
+    };
+    const scored = products.map((p) => {
+      const name = (p.name || '').toLowerCase();
+      let score = 0;
+      if (name === qLower) score += 100;                    // exact name
+      else if (name.startsWith(qLower)) score += 50;        // prefix match
+      else if (name.includes(qLower)) score += 30;          // substring
+      else if (isSubsequence(name, qLower)) score += 10;    // fuzzy/typo match
+      if (terms.every((t) => name.includes(t))) score += 20; // all words present
+      if (p.barcode && p.barcode.toLowerCase().includes(qLower)) score += 15;
+      if (p.tags?.some((t) => t.toLowerCase().includes(qLower))) score += 15;
+      if (p.stock > 0) score += 2;                           // prefer in-stock
+      return { ...p, _score: score };
+    });
+
+    scored.sort((a, b) => b._score - a._score);
+    res.json(scored.slice(0, 20));
   } catch (error) {
     console.error("Search products error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
@@ -575,6 +643,116 @@ exports.updateProductImage = async (req, res) => {
     });
   } catch (error) {
     console.error("Update image error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc    Get related products ("You may also like" — same category/brand)
+// @route   GET /api/products/:id/related
+// @access  Private
+exports.getRelatedProducts = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id).lean();
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    const related = await Product.find({
+      _id: { $ne: product._id },
+      isActive: true,
+      $or: [
+        { category: product.category },
+        ...(product.brand ? [{ brand: product.brand }] : [])
+      ]
+    })
+      .populate('category', 'name')
+      .populate('brand', 'name')
+      // In-stock + same-brand first, then best sellers
+      .sort({ isActive: 1, salesCount: -1, createdAt: -1 })
+      .limit(8)
+      .lean();
+
+    // Sort: in-stock first, then salesCount
+    related.sort((a, b) => (b.stock > 0) - (a.stock > 0) || (b.salesCount || 0) - (a.salesCount || 0));
+
+    res.json(related.slice(0, 6));
+  } catch (error) {
+    console.error("Related products error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc    Frequently bought together (co-occurrence across past bills)
+// @route   GET /api/products/frequently-bought?productIds=id1,id2
+// @access  Private
+exports.getFrequentlyBought = async (req, res) => {
+  try {
+    const ids = (req.query.productIds || '').split(',').filter(Boolean);
+    if (ids.length === 0) return res.json([]);
+
+    const mongoose = require('mongoose');
+    const objectIds = ids.map((id) => new mongoose.Types.ObjectId(id));
+
+    // Bills that contain ANY of the given products
+    const coProducts = await Bill.aggregate([
+      { $match: { isVoided: false, 'items.product': { $in: objectIds } } },
+      { $unwind: '$items' },
+      { $match: { 'items.product': { $nin: objectIds } } },
+      {
+        $group: {
+          _id: '$items.product',
+          name: { $first: '$items.name' },
+          pairs: { $sum: 1 },
+          totalQty: { $sum: '$items.quantity' }
+        }
+      },
+      { $sort: { pairs: -1, totalQty: -1 } },
+      { $limit: 6 }
+    ]);
+
+    const resultIds = coProducts.map((c) => c._id);
+    const products = await Product.find({ _id: { $in: resultIds }, isActive: true })
+      .populate('category', 'name')
+      .populate('brand', 'name')
+      .lean();
+    const byId = Object.fromEntries(products.map((p) => [p._id.toString(), p]));
+
+    res.json(
+      coProducts.map((c) => ({ ...byId[c._id.toString()], pairCount: c.pairs })).filter((p) => p.name)
+    );
+  } catch (error) {
+    console.error("Frequently bought error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// @desc    Top selling products in the last 7 days (dashboard, staff-visible)
+// @route   GET /api/products/top-selling
+// @access  Private
+exports.getTopSelling = async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 7, 90);
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const top = await Bill.aggregate([
+      { $match: { isVoided: false, createdAt: { $gte: since } } },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.product',
+          name: { $first: '$items.name' },
+          quantity: { $sum: '$items.quantity' },
+          revenue: { $sum: '$items.subtotal' }
+        }
+      },
+      { $sort: { quantity: -1 } },
+      { $limit: 5 }
+    ]);
+
+    res.json(top);
+  } catch (error) {
+    console.error("Top selling error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };

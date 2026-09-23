@@ -13,12 +13,14 @@ import {
 } from 'react-icons/fi';
 import api from '../../services/api';
 import { useBarcodeScanner } from '../../utils/camera';
+import { useSettings } from '../../context/SettingsContext';
 import CategoryForm from '../categories/CategoryForm';
 
 const ProductForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { settings } = useSettings();
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
@@ -48,7 +50,8 @@ const ProductForm = () => {
     price: '',
     barcode: '',
     description: '',
-    tax: 0
+    // Preferences: default tax rate from Settings
+    tax: settings?.defaultTaxRate ?? 0
   });
 
   const { startScanning, BarcodeScanner } = useBarcodeScanner((barcode) => {

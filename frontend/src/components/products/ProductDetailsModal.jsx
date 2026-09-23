@@ -1,9 +1,27 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiX, FiPackage } from 'react-icons/fi';
 import { formatCurrency } from '../../utils/formatters';
-import { getImageUrl } from '../../services/api';
+import api, { getImageUrl } from '../../services/api';
 
-const ProductDetailsModal = ({ product, onClose }) => {
+const ProductDetailsModal = ({ product: initialProduct, onClose }) => {
+  // Allow browsing related products inside the same modal
+  const [product, setProduct] = useState(initialProduct);
+  const [related, setRelated] = useState([]);
+
+  useEffect(() => {
+    setProduct(initialProduct);
+  }, [initialProduct]);
+
+  useEffect(() => {
+    setRelated([]);
+    if (!product?._id) return;
+    let cancelled = false;
+    api.get(`/products/${product._id}/related`)
+      .then((res) => { if (!cancelled) setRelated(res.data || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [product?._id]);
+
   if (!product) return null;
 
   // Use the centralized Cloudinary-compatible helper
@@ -119,6 +137,40 @@ const ProductDetailsModal = ({ product, onClose }) => {
               </div>
             )}
           </div>
+          {/* Related products ("You may also like") */}
+          {related.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">You may also like</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {related.map((p) => (
+                  <button
+                    key={p._id}
+                    type="button"
+                    onClick={() => setProduct(p)}
+                    className="flex items-center gap-2 p-2 rounded-lg border border-gray-100 hover:border-primary-300 hover:bg-primary-50/50 text-left transition-colors"
+                  >
+                    {p.image ? (
+                      <img
+                        src={getImageUrl(p.image)}
+                        alt={p.name}
+                        loading="lazy"
+                        className="w-9 h-9 rounded object-cover shrink-0"
+                        onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="w-9 h-9 bg-gray-100 rounded flex items-center justify-center shrink-0">
+                        <FiPackage className="w-4 h-4 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-gray-900 truncate">{p.name}</p>
+                      <p className="text-[10px] text-primary-600 font-semibold">{formatCurrency(p.price)}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Close Button */}

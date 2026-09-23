@@ -36,8 +36,17 @@ console.log('🌐 API Base URL:', BASE_URL);
 // ============================================
 export const getImageUrl = (imagePath) => {
   if (!imagePath) return null;
-  
-  // If it's already a full URL (Cloudinary, HTTP, HTTPS), return as is
+
+  // Cloudinary URL → inject auto-format + auto-quality transforms
+  // (serves WebP/AVIF where supported, typically 50-80% smaller)
+  if (imagePath.includes('res.cloudinary.com') && imagePath.includes('/upload/')) {
+    if (!imagePath.includes('/upload/f_auto')) {
+      return imagePath.replace('/upload/', '/upload/f_auto,q_auto/');
+    }
+    return imagePath;
+  }
+
+  // If it's already another full URL (HTTP/HTTPS), return as is
   if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
     return imagePath;
   }

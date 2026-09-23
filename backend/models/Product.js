@@ -33,8 +33,8 @@ const productSchema = new mongoose.Schema({
   barcode: { 
     type: String, 
     trim: true,
-    sparse: true,
     default: undefined // This ensures null values aren't inserted
+    // sparse index declared at schema level below
   },
   stock: { 
     type: Number, 
@@ -106,6 +106,14 @@ productSchema.index({
   tags: 'text',
   description: 'text'
 });
+
+// Performance indexes for frequent query patterns
+productSchema.index({ isActive: 1, category: 1 });      // product lists filtered by category
+productSchema.index({ isActive: 1, name: 1 });          // alphabetical listing / suggestions
+productSchema.index({ isActive: 1, stock: 1 });         // stock filters (in/out)
+productSchema.index({ barcode: 1 }, { sparse: true });  // barcode scan lookups
+productSchema.index({ salesCount: -1 });                // popular products ordering
+productSchema.index({ isActive: 1, createdAt: -1 });    // default "newest first" listing
 
 // Check if stock is low
 productSchema.methods.isLowStock = function() {

@@ -28,15 +28,22 @@ const Layout = () => {
         <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
         <main
-          className={`flex-1 transition-all duration-300 mt-16 ${
+          className={`flex-1 min-w-0 transition-all duration-300 mt-16 ${
             isMobile
-              ? 'p-3 pb-24 ml-0'           // 📱 Mobile: full width + bottom padding for nav bar
+              ? 'px-3 pt-3 ml-0'
               : sidebarOpen
-                ? 'ml-64 p-6'              // 🖥️ Desktop: sidebar open
-                : 'ml-20 p-6'              // 🖥️ Desktop: sidebar collapsed
+                ? 'ml-64 p-6'
+                : 'ml-20 p-6'
           }`}
+          style={
+            isMobile
+              ? { paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }
+              : undefined
+          }
         >
-          <Outlet />
+          <div className="page-container">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

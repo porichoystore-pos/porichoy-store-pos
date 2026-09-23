@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { FiCamera, FiX, FiUpload, FiLoader, FiPackage, FiSearch, FiCpu } from 'react-icons/fi';
 import * as tf from '@tensorflow/tfjs';
 import * as mobilenet from '@tensorflow-models/mobilenet';
-import api from '../../services/api';
+import api, { getImageUrl } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -465,8 +465,9 @@ const VisualSearch = ({ onResult, onClose }) => {
                     <div className="flex items-start space-x-3">
                       {product.image ? (
                         <img 
-                          src={`http://localhost:5000${product.image}`} 
+                          src={getImageUrl(product.image)} 
                           alt={product.name} 
+                          loading="lazy"
                           className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded"
                           onError={(e) => {
                             e.target.onerror = null;

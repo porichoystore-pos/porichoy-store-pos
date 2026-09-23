@@ -11,7 +11,6 @@ exports.createBill = async (req, res) => {
   try {
     const { customer, customerInfo, items, payments, discount, notes } = req.body;
 
-    // Validate required fields
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Items are required" });
     }
@@ -20,11 +19,9 @@ exports.createBill = async (req, res) => {
       return res.status(400).json({ message: "Payment information is required" });
     }
 
-    // Calculate totals
     let subtotalTotal = 0;
     let taxTotal = 0;
 
-    // Validate and process items
     const processedItems = [];
     for (const item of items) {
       if (!item.product || !item.quantity) {
@@ -36,7 +33,6 @@ exports.createBill = async (req, res) => {
         return res.status(400).json({ message: `Product ${item.product} not found` });
       }
       
-      // Use the price from the database, NOT from the request body
       const price = Number(product.price);
       const quantity = Number(item.quantity);
       const itemSubtotal = price * quantity;
@@ -49,7 +45,7 @@ exports.createBill = async (req, res) => {
         name: product.name,
         barcode: product.barcode,
         mrp: Number(product.mrp),
-        price: price, // Use database price, NOT item.price
+        price: price,
         quantity: quantity,
         tax: Number(product.tax) || 0,
         subtotal: itemSubtotal
@@ -64,7 +60,6 @@ exports.createBill = async (req, res) => {
 
     console.log(`Subtotal: ${subtotalTotal}, Tax: ${taxTotal}, Discount: ${discountAmount}, Total: ${total}`);
 
-    // Prepare customer data
     let customerData = {};
     if (customer) {
       customerData.customer = customer;
@@ -76,7 +71,6 @@ exports.createBill = async (req, res) => {
       };
     }
 
-    // Create bill
     let bill;
     try {
       bill = new Bill({
@@ -91,7 +85,6 @@ exports.createBill = async (req, res) => {
         notes: notes || ''
       });
       
-      // Save the bill instance
       await bill.save();
       
       console.log('Bill created successfully:', bill.billNumber);
@@ -106,7 +99,6 @@ exports.createBill = async (req, res) => {
       });
     }
 
-    // Update customer purchase stats if customer exists
     if (customer) {
       await Customer.findByIdAndUpdate(customer, {
         $inc: { totalPurchases: total },
@@ -114,12 +106,11 @@ exports.createBill = async (req, res) => {
       });
     }
 
-    // Create sale record
     await Sale.create({
       bill: bill._id,
       date: new Date(),
       total,
-      paymentMethod: payments[0]?.method,
+      paymentMethod: payments.length > 1 ? 'mixed' : payments[0]?.method,
       profit: 0
     });
 
@@ -141,30 +132,60 @@ exports.createBill = async (req, res) => {
 // @access  Private
 exports.getBills = async (req, res) => {
   try {
-    const { startDate, endDate, page = 1, limit = 20 } = req.query;
-    const query = { isVoided: false };
+    const { startDate, endDate, page = 1, limit = 20, paymentMethod, status, customer } = req.query;
+    const query = {};
+
+    if (status === 'voided') {
+      query.isVoided = true;
+    } else if (status !== 'all') {
+      query.isVoided = false;
+    }
+
+    if (paymentMethod && ['cash', 'card', 'upi', 'mixed'].includes(paymentMethod)) {
+      query['payments.method'] = paymentMethod;
+    }
+
+    if (customer && customer.trim()) {
+      const escaped = customer.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = { $regex: escaped, $options: 'i' };
+      const matchedIds = await Customer.find({
+        $or: [{ name: regex }, { phone: regex }]
+      }).distinct('_id');
+      query.$or = [
+        { 'customerInfo.name': regex },
+        { 'customerInfo.phone': regex },
+        { customer: { $in: matchedIds } }
+      ];
+    }
 
     if (startDate || endDate) {
       query.createdAt = {};
       if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!/[T ]\d{2}:\d{2}/.test(endDate)) end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageLimit = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
+    const pageNumber = Math.max(parseInt(page) || 1, 1);
+    const skip = (pageNumber - 1) * pageLimit;
 
     const bills = await Bill.find(query)
       .populate('customer', 'name phone')
       .populate('createdBy', 'username')
       .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
-      .skip(skip);
+      .limit(pageLimit)
+      .skip(skip)
+      .lean();
 
     const total = await Bill.countDocuments(query);
 
     res.json({
       bills,
-      page: parseInt(page),
-      pages: Math.ceil(total / parseInt(limit)),
+      page: pageNumber,
+      pages: Math.ceil(total / pageLimit),
       total
     });
   } catch (error) {
@@ -249,6 +270,96 @@ exports.getTodayBills = async (req, res) => {
   }
 };
 
+// @desc    Update bill (customer info, notes, discount, payment method)
+// @route   PUT /api/bills/:id
+// @access  Private
+exports.updateBill = async (req, res) => {
+  try {
+    const bill = await Bill.findById(req.params.id);
+
+    if (!bill) {
+      return res.status(404).json({ message: 'Bill not found' });
+    }
+    if (bill.isVoided) {
+      return res.status(400).json({ message: 'Cannot edit a voided bill' });
+    }
+
+    const { customer, customerInfo, notes, discount, paymentMethod } = req.body;
+
+    if (customer !== undefined) {
+      bill.customer = customer || undefined;
+    }
+    if (customerInfo !== undefined) {
+      bill.customerInfo = {
+        name: customerInfo.name ?? bill.customerInfo?.name,
+        phone: customerInfo.phone ?? bill.customerInfo?.phone,
+        email: customerInfo.email ?? bill.customerInfo?.email
+      };
+    }
+    if (notes !== undefined) {
+      bill.notes = notes;
+    }
+
+    if (discount !== undefined) {
+      const maxDiscount = bill.subtotal + bill.taxTotal;
+      const d = Number(discount);
+      if (isNaN(d) || d < 0 || d > maxDiscount + 0.001) {
+        return res.status(400).json({
+          message: `Discount must be between 0 and ${maxDiscount.toFixed(2)}`
+        });
+      }
+      bill.discount = d;
+    }
+    bill.total = Number((bill.subtotal + bill.taxTotal - bill.discount).toFixed(2));
+
+    if (paymentMethod !== undefined) {
+      if (!['cash', 'card', 'upi', 'mixed'].includes(paymentMethod)) {
+        return res.status(400).json({ message: 'Invalid payment method' });
+      }
+      if (bill.payments.length <= 1) {
+        bill.payments = [{
+          method: paymentMethod,
+          amount: bill.total,
+          status: 'completed'
+        }];
+      } else {
+        const paidTotal = bill.payments.reduce((s, p) => s + p.amount, 0);
+        bill.payments = bill.payments.map((p) => ({
+          ...p.toObject(),
+          amount: Number(((p.amount / (paidTotal || 1)) * bill.total).toFixed(2)),
+          status: 'completed'
+        }));
+      }
+    } else if (discount !== undefined && bill.payments.length === 1) {
+      bill.payments[0].amount = bill.total;
+    }
+
+    await bill.save();
+
+    await Sale.updateOne(
+      { bill: bill._id },
+      {
+        $set: {
+          total: bill.total,
+          paymentMethod:
+            bill.payments.length > 1 ? 'mixed' : bill.payments[0]?.method
+        }
+      }
+    );
+
+    await bill.populate([
+      { path: 'customer' },
+      { path: 'items.product' },
+      { path: 'createdBy', select: 'username name' }
+    ]);
+
+    res.json(bill);
+  } catch (error) {
+    console.error('Update bill error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
 // @desc    Void bill
 // @route   PUT /api/bills/:id/void
 // @access  Private
@@ -265,7 +376,6 @@ exports.voidBill = async (req, res) => {
       return res.status(400).json({ message: "Bill already voided" });
     }
 
-    // Restore stock
     for (const item of bill.items) {
       await Product.findByIdAndUpdate(item.product, {
         $inc: { stock: item.quantity }
@@ -297,7 +407,6 @@ exports.printBill = async (req, res) => {
       return res.status(404).json({ message: "Bill not found" });
     }
 
-    // Ensure all prices are numbers
     bill.items.forEach(item => {
       item.price = Number(item.price);
       item.subtotal = Number(item.subtotal);
@@ -311,7 +420,8 @@ exports.printBill = async (req, res) => {
     const pdfBuffer = await generateInvoicePDF(bill);
     
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=bill-${bill.billNumber}.pdf`);
+    // ✅ CHANGED: inline (opens in browser PDF viewer) instead of attachment (forces download)
+    res.setHeader('Content-Disposition', `inline; filename=bill-${bill.billNumber}.pdf`);
     res.setHeader('Content-Length', pdfBuffer.length);
     res.send(pdfBuffer);
   } catch (error) {

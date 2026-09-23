@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FiPrinter, FiArrowLeft, FiXCircle, FiDownload } from 'react-icons/fi';
+import { FiPrinter, FiArrowLeft, FiXCircle, FiDownload, FiEdit2 } from 'react-icons/fi';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
+import Badge from '../common/Badge';
+import EditBillModal from './EditBillModal';
 import api from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import ConfirmDialog from '../common/ConfirmDialog';
@@ -10,10 +13,12 @@ const BillDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
   const [bill, setBill] = useState(null);
   const [loading, setLoading] = useState(true);
   const [voidDialog, setVoidDialog] = useState(false);
   const [voidReason, setVoidReason] = useState('');
+  const [showEdit, setShowEdit] = useState(false);
 
   useEffect(() => {
     fetchBill();
@@ -139,9 +144,25 @@ const BillDetails = () => {
           >
             <FiArrowLeft className="w-4 h-4" />
           </button>
-          <h1 className="text-lg font-bold text-gray-900">Bill Details</h1>
+          <h1 className="text-lg font-bold text-gray-900">
+            Bill Details
+            {bill.isManual && <Badge variant="info" className="ml-2 align-middle">Manual</Badge>}
+          </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {!bill.isVoided && (
+            <button
+              onClick={() =>
+                bill.isManual && user?.role === 'admin'
+                  ? navigate(`/sales/manual/${bill._id}`)
+                  : setShowEdit(true)
+              }
+              className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm flex items-center hover:bg-gray-50"
+            >
+              <FiEdit2 className="mr-1 w-3.5 h-3.5" />
+              Edit
+            </button>
+          )}
           <button
             onClick={handlePrint}
             className="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm flex items-center"
@@ -284,6 +305,15 @@ const BillDetails = () => {
           </div>
         </div>
       </div>
+
+      {/* Edit bill modal */}
+      {showEdit && (
+        <EditBillModal
+          bill={bill}
+          onClose={() => setShowEdit(false)}
+          onSuccess={(updated) => setBill(updated)}
+        />
+      )}
 
       {/* Void Confirmation Dialog */}
       <ConfirmDialog

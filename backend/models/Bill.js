@@ -84,31 +84,63 @@ const billSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  voidReason: String
+  voidReason: String,
+  isManual: {
+    type: Boolean,
+    default: false // true = entered manually (not via POS)
+  }
 }, { 
   timestamps: true 
 });
 
-// Generate bill number before save - FIXED VERSION (no next() call in async function)
-billSchema.pre('save', async function() {
+// Performance indexes for frequent query patterns
+billSchema.index({ isVoided: 1, createdAt: -1 }); // bill list + reports default sort
+billSchema.index({ createdAt: -1 });            // date-range queries (reports, today)
+billSchema.index({ customer: 1, createdAt: -1 }); // customer bill history
+
+// Build the store prefix from store name (first 4 letters, uppercase, A-Z only)
+const buildStorePrefix = (storeName) => {
+  const cleaned = (storeName || 'PORI')
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '');
+  return (cleaned + 'XXXX').slice(0, 4);
+};
+
+// Generate bill number before save
+// Format: [STORE4][YY][MM][DD][SEQ4]  →  e.g., PORI2609230007
+billSchema.pre('save', async function () {
   try {
     if (!this.billNumber) {
-      const date = new Date();
+      // Use the bill's own date when set (manual entries backdate the number)
+      const date = this.createdAt ? new Date(this.createdAt) : new Date();
       const year = date.getFullYear().toString().slice(-2);
       const month = (date.getMonth() + 1).toString().padStart(2, '0');
       const day = date.getDate().toString().padStart(2, '0');
-      
+
+      // Get store name from settings for the prefix
+      let storeName = 'Porichoy Store';
+      try {
+        const Setting = mongoose.model('Setting');
+        const settings = await Setting.getSingleton();
+        if (settings?.storeName) storeName = settings.storeName;
+      } catch {
+        // Setting model may not be registered — fall back to default
+      }
+
+      const prefix = buildStorePrefix(storeName);
+
       // Count existing bills to create sequential number
       const Bill = mongoose.model('Bill');
       const count = await Bill.countDocuments();
-      
-      this.billNumber = `BILL-${year}${month}${day}-${(count + 1).toString().padStart(4, '0')}`;
-      
+      const seq = (count + 1).toString().padStart(4, '0');
+
+      this.billNumber = `${prefix}${year}${month}${day}${seq}`;
+
       console.log('Generated bill number:', this.billNumber);
     }
   } catch (error) {
     console.error('Error in bill number generation:', error);
-    throw error; // Throw error instead of calling next(error)
+    throw error;
   }
 });
 

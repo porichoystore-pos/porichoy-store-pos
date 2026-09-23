@@ -21,6 +21,7 @@ const ProductCard = ({ product, onDelete, onView }) => {
           <img 
             src={imageUrl} 
             alt={product.name} 
+            loading="lazy"
             className="w-full h-full object-contain p-2"
             onError={(e) => {
               e.target.onerror = null;
@@ -106,4 +107,5 @@ const ProductCard = ({ product, onDelete, onView }) => {
   );
 };
 
-export default ProductCard;
+// Memoized — cards don't re-render unless their product or callbacks change
+export default React.memo(ProductCard);

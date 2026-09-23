@@ -4,6 +4,7 @@ const {
   createBill,
   getBills,
   getBill,
+  updateBill,
   voidBill,
   getTodayBills,
   getBillByNumber,
@@ -20,6 +21,7 @@ router.get('/today', getTodayBills);
 router.get('/number/:billNumber', getBillByNumber);
 router.get('/:id', getBill);
 router.get('/:id/print', printBill);
+router.put('/:id', updateBill);
 router.put('/:id/void', voidBill);
 
 module.exports = router;

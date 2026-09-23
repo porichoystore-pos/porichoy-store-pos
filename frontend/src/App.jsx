@@ -1,27 +1,34 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { SettingsProvider } from './context/SettingsContext';
 import PrivateRoute from './components/common/PrivateRoute';
-import Login from './components/auth/Login';
-import Dashboard from './components/dashboard/Dashboard';
-import POSInterface from './components/pos/POSInterface';
-import ProductList from './components/products/ProductList';
-import ProductForm from './components/products/ProductForm';
-import BillList from './components/bills/BillList';
-import BillDetails from './components/bills/BillDetails';
-import CategoryList from './components/categories/CategoryList';
-import CustomerList from './components/customers/CustomerList';
-import Reports from './components/reports/Reports';
 import Layout from './components/common/Layout';
+import Login from './components/auth/Login'; // eager: needed for first paint
+import { PageSkeleton } from './components/common/Skeletons';
+
+// Code-split each page — only downloaded when the route is visited
+const Dashboard = lazy(() => import('./components/dashboard/Dashboard'));
+const POSInterface = lazy(() => import('./components/pos/POSInterface'));
+const ProductList = lazy(() => import('./components/products/ProductList'));
+const ProductForm = lazy(() => import('./components/products/ProductForm'));
+const BillList = lazy(() => import('./components/bills/BillList'));
+const BillDetails = lazy(() => import('./components/bills/BillDetails'));
+const CategoryList = lazy(() => import('./components/categories/CategoryList'));
+const CustomerList = lazy(() => import('./components/customers/CustomerList'));
+const Reports = lazy(() => import('./components/reports/Reports'));
+const ManualSale = lazy(() => import('./components/sales/ManualSale'));
+const Settings = lazy(() => import('./components/settings/Settings'));
 
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <ToastProvider>
+        <SettingsProvider>
+          <ToastProvider>
           <Toaster 
             position="top-right"
             toastOptions={{
@@ -46,6 +53,7 @@ function App() {
               },
             }}
           />
+          <Suspense fallback={<PageSkeleton />}>
           <Routes>
             {/* Public Routes */}
             <Route path="/login" element={<Login />} />
@@ -63,21 +71,19 @@ function App() {
               <Route path="categories" element={<CategoryList />} />
               <Route path="customers" element={<CustomerList />} />
               <Route path="reports" element={<Reports />} />
+              <Route path="sales/manual" element={<ManualSale />} />
+              <Route path="sales/manual/:id" element={<ManualSale />} />
               
-              {/* Settings Route - You can add this later */}
-              <Route path="settings" element={
-                <div className="bg-white rounded-xl shadow-md p-6">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">Settings</h2>
-                  <p className="text-gray-600">Settings page coming soon...</p>
-                </div>
-              } />
+              <Route path="settings" element={<Settings />} />
             </Route>
 
             {/* Catch all unmatched routes */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
-       
-        </ToastProvider>
+          </Suspense>
+
+          </ToastProvider>
+        </SettingsProvider>
       </AuthProvider>
     </BrowserRouter>
   );

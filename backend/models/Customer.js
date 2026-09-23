@@ -51,6 +51,11 @@ const customerSchema = new mongoose.Schema({
   timestamps: true 
 });
 
+// Performance indexes for frequent query patterns
+// (phone already has a unique index from the field definition)
+customerSchema.index({ isActive: 1, createdAt: -1 }); // customer list pagination
+customerSchema.index({ name: 1 });                    // name search/sort
+
 // Update purchase stats
 customerSchema.methods.addPurchase = function(amount) {
   this.totalPurchases += amount;

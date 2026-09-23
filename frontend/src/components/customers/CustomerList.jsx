@@ -15,6 +15,10 @@ import api from '../../services/api';
 import CustomerForm from './CustomerForm';
 import ConfirmDialog from '../common/ConfirmDialog';
 import { formatCurrency, formatShortDate } from '../../utils/formatters';
+import { ListSkeleton } from '../common/Skeletons';
+import PageHeader from '../common/PageHeader';
+import EmptyState from '../common/EmptyState';
+import Badge from '../common/Badge';
 
 const CustomerList = () => {
   const [customers, setCustomers] = useState([]);
@@ -91,32 +95,24 @@ const CustomerList = () => {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto"></div>
-          <p className="mt-3 text-sm text-gray-600">Loading customers...</p>
-        </div>
-      </div>
-    );
+    return <ListSkeleton rows={8} />;
   }
 
   return (
     <div className="px-3 py-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-gray-900">Customers</h1>
+      <PageHeader title="Customers" subtitle={`${pagination.total} total`}>
         <button
           onClick={() => {
             setEditingCustomer(null);
             setShowForm(true);
           }}
-          className="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm flex items-center"
+          className="btn-primary btn-sm"
         >
-          <FiPlus className="mr-1" />
-          Add
+          <FiPlus />
+          <span className="hidden sm:inline">Add</span>
         </button>
-      </div>
+      </PageHeader>
 
       {/* Search Bar */}
       <div className="mb-4">
@@ -134,7 +130,7 @@ const CustomerList = () => {
           </div>
           <button
             onClick={handleSearch}
-            className="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm"
+            className="btn-primary btn-sm self-stretch"
           >
             Search
           </button>
@@ -190,9 +186,7 @@ const CustomerList = () => {
                 <span className="text-gray-500">
                   Total: {formatCurrency(customer.totalPurchases || 0)}
                 </span>
-                <span className="px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full text-[10px]">
-                  {customer.loyaltyPoints || 0} pts
-                </span>
+                <Badge variant="primary">{customer.loyaltyPoints || 0} pts</Badge>
               </div>
 
               {customer.lastPurchase && (
@@ -227,16 +221,16 @@ const CustomerList = () => {
           )}
         </div>
       ) : (
-        <div className="text-center py-12 bg-white rounded-lg">
-          <FiUsers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">No customers found</p>
-          <button
-            onClick={() => setShowForm(true)}
-            className="mt-3 px-4 py-2 text-sm bg-primary-600 text-white rounded-lg"
-          >
-            Add Customer
-          </button>
-        </div>
+        <EmptyState
+          icon={FiUsers}
+          title="No customers found"
+          description="Add your first customer to track purchases and loyalty"
+          action={
+            <button onClick={() => setShowForm(true)} className="btn-primary btn-sm">
+              <FiPlus /> Add Customer
+            </button>
+          }
+        />
       )}
 
       {/* Customer Form Modal */}

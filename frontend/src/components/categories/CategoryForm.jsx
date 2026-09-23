@@ -1,174 +1,270 @@
-import React, { useState } from 'react';
-import { FiX, FiSave } from 'react-icons/fi';
+import React, { useState, useEffect } from 'react';
+import { FiX, FiSave, FiPackage, FiTag } from 'react-icons/fi';
 import { useToast } from '../../context/ToastContext';
 import api from '../../services/api';
 
+const TYPES = [
+  { id: 'main', label: 'Main Category', desc: 'Top-level grouping (e.g. Face Care)' },
+  { id: 'sub', label: 'Subcategory', desc: 'Nested under a main category' },
+  { id: 'brand', label: 'Brand', desc: 'Product brand (e.g. Lakme)' }
+];
+
+const PRESET_COLORS = [
+  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+  '#EC4899', '#14B8A6', '#F97316', '#6B7280', '#1F2937'
+];
+
 const CategoryForm = ({ category, onClose, onSuccess }) => {
+  const isEdit = Boolean(category?._id);
   const [loading, setLoading] = useState(false);
-  
-  // Determine if this is a brand form (based on category prop having type 'brand')
-  const isBrand = category?.type === 'brand';
-  
+  const [mainCategories, setMainCategories] = useState([]);
+  const [errors, setErrors] = useState({});
+
   const [formData, setFormData] = useState({
     name: category?.name || '',
     description: category?.description || '',
     color: category?.color || '#3B82F6',
-    type: category?.type || 'main' // Default to 'main' for categories, 'brand' for brands
+    type: category?.type || 'main',
+    parentCategory: category?.parentCategory?._id || category?.parentCategory || ''
   });
 
   const toast = useToast();
+  const isBrand = formData.type === 'brand';
+
+  // Load main categories for the parent selector
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await api.get('/categories?type=main');
+        // Exclude self when editing (a category can't be its own parent)
+        setMainCategories((res.data || []).filter((c) => c._id !== category?._id));
+      } catch {
+        setMainCategories([]);
+      }
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Close on Escape
+  useEffect(() => {
+    const handleKey = (e) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', handleKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = 'unset';
+    };
+  }, [onClose]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
+  };
+
+  const validate = () => {
+    const next = {};
+    if (!formData.name.trim()) next.name = 'Name is required';
+    if (formData.type === 'sub' && !formData.parentCategory) {
+      next.parentCategory = 'Choose a parent category';
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (!formData.name) {
-      toast.error(`${isBrand ? 'Brand' : 'Category'} name is required`);
-      return;
-    }
+    if (!validate()) return;
 
     try {
       setLoading(true);
-      
-      let response;
-      // Check if we're editing an existing item (has _id)
-      if (category?._id) {
-        response = await api.put(`/categories/${category._id}`, formData);
-        toast.success(`${isBrand ? 'Brand' : 'Category'} updated successfully`);
-      } else {
-        // Creating new category or brand
-        response = await api.post('/categories', formData);
-        toast.success(`${isBrand ? 'Brand' : 'Category'} created successfully`);
-      }
-      
+      const payload = {
+        name: formData.name.trim(),
+        description: formData.description,
+        color: isBrand ? undefined : formData.color,
+        type: formData.type,
+        parentCategory: formData.type === 'sub' ? formData.parentCategory : null
+      };
+
+      const response = isEdit
+        ? await api.put(`/categories/${category._id}`, payload)
+        : await api.post('/categories', payload);
+
+      toast.success(
+        `${isBrand ? 'Brand' : 'Category'} ${isEdit ? 'updated' : 'created'} successfully`
+      );
       onSuccess(response.data);
       onClose();
     } catch (error) {
-      toast.error(error.response?.data?.message || `Failed to save ${isBrand ? 'brand' : 'category'}`);
+      const msg = error.response?.data?.message || `Failed to save ${isBrand ? 'brand' : 'category'}`;
+      if (/already exists/i.test(msg)) {
+        setErrors((prev) => ({ ...prev, name: msg }));
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const colors = [
-    '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
-    '#EC4899', '#14B8A6', '#F97316', '#6B7280', '#1F2937'
-  ];
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl max-w-md w-full">
-        <div className="p-6 border-b flex justify-between items-center">
-          <h2 className="text-xl font-semibold">
-            {category?._id 
-              ? `Edit ${isBrand ? 'Brand' : 'Category'}` 
-              : `Add New ${isBrand ? 'Brand' : 'Category'}`}
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-[2px] animate-backdrop"
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <div className="relative bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-xl shadow-2xl animate-modal max-h-[92vh] overflow-y-auto pb-safe">
+        {/* Header */}
+        <div className="sticky top-0 bg-white z-10 flex justify-between items-center px-4 sm:px-6 py-3.5 border-b border-gray-100 rounded-t-2xl sm:rounded-t-xl">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+            {isEdit ? 'Edit' : 'Add'} {isBrand ? 'Brand' : formData.type === 'sub' ? 'Subcategory' : 'Category'}
           </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <button onClick={onClose} className="btn-icon" aria-label="Close">
             <FiX className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-4 space-y-4">
+          {/* Type selector */}
+          <div>
+            <label className="input-label">Type</label>
+            <div className="grid grid-cols-3 gap-2">
+              {TYPES.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      type: t.id,
+                      parentCategory: t.id === 'sub' ? prev.parentCategory : ''
+                    }))
+                  }
+                  className={`py-2 px-1 rounded-lg border-2 text-xs font-medium transition-all ${
+                    formData.type === t.id
+                      ? 'border-primary-500 bg-primary-50 text-primary-700'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                  title={t.desc}
+                >
+                  {t.id === 'brand' ? 'Brand' : t.id === 'sub' ? 'Sub' : 'Main'}
+                </button>
+              ))}
+            </div>
+            {errors.type && <p className="mt-1 text-xs text-red-600">{errors.type}</p>}
+          </div>
+
           {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {isBrand ? 'Brand Name' : 'Category Name'} <span className="text-red-500">*</span>
+            <label className="input-label">
+              Name <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               name="name"
               value={formData.name}
               onChange={handleChange}
-              className="input-field"
+              className={`input-field ${errors.name ? 'input-error' : ''}`}
               placeholder={`Enter ${isBrand ? 'brand' : 'category'} name`}
-              required
               autoFocus
             />
+            {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
           </div>
 
-          {/* Description - Only for categories, not for brands */}
+          {/* Parent category (only for sub) */}
+          {formData.type === 'sub' && (
+            <div>
+              <label className="input-label">
+                Parent Category <span className="text-red-500">*</span>
+              </label>
+              <select
+                name="parentCategory"
+                value={formData.parentCategory}
+                onChange={handleChange}
+                className={`input-field ${errors.parentCategory ? 'input-error' : ''}`}
+              >
+                <option value="">Select a main category...</option>
+                {mainCategories.map((cat) => (
+                  <option key={cat._id} value={cat._id}>{cat.name}</option>
+                ))}
+              </select>
+              {errors.parentCategory && (
+                <p className="mt-1 text-xs text-red-600">{errors.parentCategory}</p>
+              )}
+            </div>
+          )}
+
+          {/* Description (not for brands) */}
           {!isBrand && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description
+              <label className="input-label">
+                Description <span className="text-gray-400 text-xs">(optional)</span>
               </label>
               <textarea
                 name="description"
                 value={formData.description}
                 onChange={handleChange}
-                rows="3"
+                rows="2"
                 className="input-field"
-                placeholder="Enter category description"
-              ></textarea>
+                placeholder="Short description"
+              />
             </div>
           )}
 
-          {/* Color - Only for categories, not for brands */}
+          {/* Color (not for brands) */}
           {!isBrand && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Color
-              </label>
-              <div className="flex items-center space-x-2 mb-2">
+              <label className="input-label">Color</label>
+              <div className="flex items-center gap-3 mb-2">
                 <input
                   type="color"
                   name="color"
                   value={formData.color}
                   onChange={handleChange}
-                  className="w-10 h-10 rounded border border-gray-300"
+                  className="w-11 h-11 rounded-lg border border-gray-300 cursor-pointer"
+                  aria-label="Pick a custom color"
                 />
-                <span className="text-sm text-gray-600">{formData.color}</span>
+                <span className="text-sm text-gray-500 font-mono">{formData.color}</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {colors.map(color => (
+                {PRESET_COLORS.map((color) => (
                   <button
                     key={color}
                     type="button"
-                    onClick={() => setFormData({ ...formData, color })}
-                    className="w-8 h-8 rounded-full border-2 transition-all"
-                    style={{
-                      backgroundColor: color,
-                      borderColor: formData.color === color ? '#000' : 'transparent'
-                    }}
+                    onClick={() => setFormData((prev) => ({ ...prev, color }))}
+                    aria-label={`Use color ${color}`}
+                    className={`w-8 h-8 rounded-full transition-all ${
+                      formData.color === color
+                        ? 'ring-2 ring-offset-2 ring-gray-900 scale-110'
+                        : 'hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: color }}
                   />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Hidden type field */}
-          <input type="hidden" name="type" value={formData.type} />
-
-          {/* Submit Buttons */}
-          <div className="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-            >
+          {/* Actions */}
+          <div className="flex gap-3 pt-3 border-t border-gray-100">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 flex items-center"
-            >
+            <button type="submit" disabled={loading} className="btn-primary flex-1">
               {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                  Saving...
-                </>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
-                <>
-                  <FiSave className="mr-2" />
-                  {category?._id ? 'Update' : 'Save'}
-                </>
+                <FiSave />
               )}
+              {loading ? 'Saving...' : isEdit ? 'Update' : 'Add'}
             </button>
           </div>
         </form>
