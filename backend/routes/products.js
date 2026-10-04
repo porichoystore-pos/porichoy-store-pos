@@ -36,58 +36,53 @@ router.post('/visual-search', visualSearch);
 router.get('/export', exportProducts);
 router.post('/bulk-import', upload.single('file'), bulkImport);
 
-// Make image optional - don't use multer for non-image requests
-router.post('/', (req, res, next) => {
-  // Check if request contains file
+// ============================================================
+// Helper — run multer and extract a real error message from any shape
+// ============================================================
+const runMulter = (req, res, next, controllerFn) => {
   const contentType = req.headers['content-type'] || '';
-  if (contentType.includes('multipart/form-data')) {
-    // If it's multipart, use multer
-    upload.single('image')(req, res, (err) => {
-      if (err) {
-        console.log('Multer error:', err.message);
-        // If error is not about file type, return error
-        if (err.message !== 'Only images are allowed') {
-          return res.status(400).json({ message: err.message });
-        }
-        // If it's a file type error but no file was actually uploaded, continue without image
-        if (!req.file) {
-          return addProduct(req, res);
-        }
-        return res.status(400).json({ message: err.message });
-      }
-      addProduct(req, res);
-    });
-  } else {
-    // If not multipart, just process normally
-    addProduct(req, res);
-  }
-});
 
-router.put('/:id', (req, res, next) => {
-  // Check if request contains file
-  const contentType = req.headers['content-type'] || '';
-  if (contentType.includes('multipart/form-data')) {
-    // If it's multipart, use multer
-    upload.single('image')(req, res, (err) => {
-      if (err) {
-        console.log('Multer error:', err.message);
-        // If error is not about file type, return error
-        if (err.message !== 'Only images are allowed') {
-          return res.status(400).json({ message: err.message });
-        }
-        // If it's a file type error but no file was actually uploaded, continue without image
-        if (!req.file) {
-          return updateProduct(req, res);
-        }
-        return res.status(400).json({ message: err.message });
-      }
-      updateProduct(req, res);
-    });
-  } else {
-    // If not multipart, just process normally
-    updateProduct(req, res);
+  // If not multipart, skip multer entirely (JSON body without image)
+  if (!contentType.includes('multipart/form-data')) {
+    return controllerFn(req, res);
   }
-});
+
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      // Multer / Cloudinary errors can arrive in many shapes.
+      // Extract the most useful message we can find.
+      const errMsg =
+        err?.message ||
+        err?.error?.message ||
+        err?.error ||
+        (typeof err === 'string' ? err : null) ||
+        'File upload failed';
+
+      // Full logging for Render logs
+      console.error('❌ Upload middleware error:', {
+        message: err?.message,
+        error: err?.error,
+        code: err?.code,
+        name: err?.name,
+        http_code: err?.http_code,
+        keys: err && typeof err === 'object' ? Object.keys(err) : typeof err
+      });
+
+      return res.status(400).json({
+        message: errMsg,
+        code: err?.code || err?.http_code || null
+      });
+    }
+    // No error → file was uploaded (or no file in request) → call controller
+    return controllerFn(req, res);
+  });
+};
+
+// POST /api/products (create)
+router.post('/', (req, res) => runMulter(req, res, null, addProduct));
+
+// PUT /api/products/:id (update)
+router.put('/:id', (req, res) => runMulter(req, res, null, updateProduct));
 
 router.get('/:id', getProduct);
 router.put('/:id/stock', updateStock);

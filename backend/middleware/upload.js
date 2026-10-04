@@ -1,25 +1,41 @@
 const multer = require('multer');
+const path = require('path');
 const { storage } = require('../config/cloudinary');
+
+// Allowed image extensions (test against file extension only, not the full name)
+const ALLOWED_EXTENSIONS = ['.jpeg', '.jpg', '.png', '.gif', '.webp', '.bmp', '.svg'];
 
 // File filter for images only
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(file.originalname.toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  const ext = path.extname(file.originalname).toLowerCase();
+  const extOk = ALLOWED_EXTENSIONS.includes(ext);
+  const mimeOk = file.mimetype && file.mimetype.startsWith('image/');
 
-  if (mimetype && extname) {
+  if (extOk && mimeOk) {
     return cb(null, true);
-  } else {
-    cb(new Error('Only images are allowed (jpeg, jpg, png, gif, webp)'));
   }
+
+  // Log exactly what was rejected (helps debug on Render)
+  console.warn('🚫 File rejected by filter:', {
+    filename: file.originalname,
+    extension: ext,
+    mimetype: file.mimetype,
+    reason: !extOk ? 'extension not allowed' : 'mimetype not an image'
+  });
+
+  cb(
+    new Error(
+      `Only image files are allowed (received: ${file.originalname}, type: ${file.mimetype})`
+    )
+  );
 };
 
 const upload = multer({
-  storage: storage,
+  storage,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 5 * 1024 * 1024 // 5 MB
   },
-  fileFilter: fileFilter
+  fileFilter
 });
 
 module.exports = upload;
